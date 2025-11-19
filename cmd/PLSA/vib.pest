@@ -1,1 +1,35 @@
-
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "~" ~ (^"\n" | "\n")* | "::" ~ ( !"::" ~ ANY )* ~ "::" }
+identifier = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+number = { ASCII_DIGIT+ ("." ~ ASCII_DIGIT+)? }
+string = { "\"" ~ (^"\"" | "\\\"")* ~ "\"" }
+lparen = { "(" }
+rparen = { ")" }
+lbracket = { "[" }
+rbracket = { "]" }
+comma = { "," }
+equals = { "=" }
+plus = { "+" }
+minus = { "-" }
+star = { "*" }
+slash = { "/" }
+hash = { "#" }
+function = { "function" }
+return = { "return" }
+require = { "require" }
+write = { "write" } // Added for write function
+program = { SOI ~ statement* ~ EOI }
+statement = { var_decl | function_decl | return_stmt | require_stmt | embedded | expr_stmt }
+expr_stmt = { expression ~ (EOI | NEWLINE)? }
+var_decl = { identifier ~ equals ~ expression ~ (EOI | NEWLINE)? }
+function_decl = { function ~ identifier ~ lparen ~ (identifier ~ (comma ~ identifier)*)? ~ rparen ~ lbracket ~ statement* ~ rbracket }
+return_stmt = { return ~ expression ~ (EOI | NEWLINE)? }
+require_stmt = { require ~ string ~ (EOI | NEWLINE)? }
+embedded = { hash ~ equals ~ identifier ~ equals ~ lbracket ~ embedded_code ~ rbracket }
+embedded_code = { ( !rbracket ~ ANY )* }
+expression = { assign }
+assign = { additive ~ (equals ~ assign)? }
+additive = { multiplicative ~ ((plus | minus) ~ multiplicative)* }
+multiplicative = { primary ~ ((star | slash) ~ primary)* }
+primary = { number | string | identifier | call | (lparen ~ expression ~ rparen) }
+call = { identifier ~ lparen ~ (expression ~ (comma ~ expression)*)? ~ rparen }
