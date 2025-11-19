@@ -6,12 +6,18 @@
   "bin": {
     "vib": "main.js"
   },
+  "scripts": {
+    "build:linux": "pkg main.js --targets node18-linux-x64 --output dist/vib-linux",
+    "build:win": "pkg main.js --targets node18-win-x64 --output dist/vib-win.exe",
+    "build:mac": "pkg main.js --targets node18-macos-x64 --output dist/vib-macos",
+    "build": "npm run build:linux && npm run build:win && npm run build:mac"
+  },
   "dependencies": {
     "chalk": "^4.1.2",
     "commander": "^11.1.0"
   },
-  "scripts": {
-    "start": "node main.js"
+  "devDependencies": {
+    "pkg": "^5.8.0"
   },
   "author": "michal92299",
   "license": "MIT"
