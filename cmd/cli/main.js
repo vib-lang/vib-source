@@ -1,280 +1,343 @@
-import cligen
-import osproc
-import os
-import strformat
-import strutils
-import terminal
-import tables
-import sequtils
-import toml_serialization  # Assuming nim-toml or similar, but for simplicity, use string formatting for TOML
+const { Command } = require('commander');
+const chalk = require('chalk');
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 
-const
-  vibVersion = "0.1.0"
-  vibAuthor = "michal92299"
-  binPath = "/usr/lib/vib/bin"
-  plsaBin = binPath & "/PLSA"
-  pmBin = binPath & "/package-manager"
-  transBin = binPath & "/translator"
-  compBin = binPath & "/compiler"
-  vmBin = binPath & "/vm"
+const vibVersion = '0.1.0';
+const vibAuthor = 'michal92299';
+const binPath = '/usr/lib/vib/bin';
+const plsaBin = path.join(binPath, 'PLSA');
+const pmBin = path.join(binPath, 'package-manager');
+const transBin = path.join(binPath, 'translator');
+const compBin = path.join(binPath, 'compiler');
+const vmBin = path.join(binPath, 'vm');
 
-proc runExternal(bin: string, args: seq[string], verbose: bool = false): int =
-  let cmd = bin & " " & args.join(" ")
-  if verbose:
-    styledEcho(fgYellow, "Executing: " & cmd)
-  let (output, exitCode) = execCmdEx(cmd)
-  if exitCode != 0:
-    styledEcho(fgRed, "Error executing: ", cmd)
-    styledEcho(fgRed, output)
-  else:
-    if verbose or exitCode == 0:
-      echo output
-  return exitCode
+function runExternal(bin, args, verbose = false) {
+  const cmd = `${bin} ${args.join(' ')}`;
+  if (verbose) {
+    console.log(chalk.yellow(`Executing: ${cmd}`));
+  }
+  try {
+    const output = execSync(cmd, { stdio: 'pipe' });
+    if (verbose) {
+      console.log(output.toString());
+    }
+    return 0;
+  } catch (err) {
+    console.error(chalk.red(`Error executing: ${cmd}`));
+    if (err.stdout) console.error(chalk.red(err.stdout.toString()));
+    if (err.stderr) console.error(chalk.red(err.stderr.toString()));
+    return 1;
+  }
+}
 
-proc checkCode(file: string, deep: bool = true, verbose: bool = false): int =
-  var args = @[file]
-  if deep:
-    args.add("--deep")
-  return runExternal(plsaBin, args, verbose)
+function checkCode(file, deep = true, verbose = false) {
+  let args = [file];
+  if (deep) args.push('--deep');
+  return runExternal(plsaBin, args, verbose);
+}
 
-proc install(verbose: bool = false, packages: seq[string]) =
-  var args = packages
-  if verbose:
-    args.insert("--verbose", 0)
-  if runExternal(pmBin, @["install"] & args, verbose) == 0:
-    styledEcho(fgGreen, "Installation completed successfully.")
-  else:
-    styledEcho(fgRed, "Installation failed.")
+const program = new Command();
+program.name('vib');
+program.version(vibVersion);
 
-proc remove(force: bool = false, packages: seq[string]) =
-  var args = packages
-  if force:
-    args.insert("--force", 0)
-  if runExternal(pmBin, @["remove"] & args) == 0:
-    styledEcho(fgGreen, "Removal completed successfully.")
-  else:
-    styledEcho(fgRed, "Removal failed.")
+program.command('install')
+  .option('--verbose')
+  .argument('<packages...>')
+  .action((packages, options) => {
+    let args = packages;
+    if (options.verbose) args.unshift('--verbose');
+    if (runExternal(pmBin, ['install', ...args], options.verbose) === 0) {
+      console.log(chalk.green('Installation completed successfully.'));
+    } else {
+      console.log(chalk.red('Installation failed.'));
+    }
+  });
 
-proc update(all: bool = false, packages: seq[string] = @[]) =
-  var args: seq[string]
-  if all:
-    args = @["--all"]
-  else:
-    args = packages
-  if runExternal(pmBin, @["update"] & args) == 0:
-    styledEcho(fgGreen, "Update completed successfully.")
-  else:
-    styledEcho(fgRed, "Update failed.")
+program.command('remove')
+  .option('--force')
+  .argument('<packages...>')
+  .action((packages, options) => {
+    let args = packages;
+    if (options.force) args.unshift('--force');
+    if (runExternal(pmBin, ['remove', ...args]) === 0) {
+      console.log(chalk.green('Removal completed successfully.'));
+    } else {
+      console.log(chalk.red('Removal failed.'));
+    }
+  });
 
-proc listPackages(detailed: bool = false) =
-  # Placeholder, assume pm has list, but simulate
-  styledEcho(fgGreen, "Installed packages:")
-  echo "Language\tName\tVersion"
-  echo "vib\tmylib\t1.0.0"
-  echo "python\tnumpy\t1.26.0"
-  if detailed:
-    echo "\nDetails:"
-    echo "vib:mylib - A sample Vib library"
-    echo "python:numpy - Numerical computing library"
+program.command('update')
+  .option('--all')
+  .argument('[packages...]')
+  .action((packages, options) => {
+    let args = options.all ? ['--all'] : packages;
+    if (runExternal(pmBin, ['update', ...args]) === 0) {
+      console.log(chalk.green('Update completed successfully.'));
+    } else {
+      console.log(chalk.red('Update failed.'));
+    }
+  });
 
-proc cBuild(target = "", output = "", optimize: bool = false, verbose: bool = false, file: string) =
-  if checkCode(file, true, verbose) != 0:
-    quit(1)
-  var args = @["build", file]
-  if target != "":
-    args.add("--target")
-    args.add(target)
-  if output != "":
-    args.add("--output")
-    args.add(output)
-  if optimize:
-    args.add("--optimize")
-  if runExternal(compBin, args, verbose) == 0:
-    styledEcho(fgGreen, "Build completed successfully.")
-  else:
-    styledEcho(fgRed, "Build failed.")
+program.command('list')
+  .option('--detailed')
+  .action((options) => {
+    console.log(chalk.green('Installed packages:'));
+    console.log('Language\tName\tVersion');
+    console.log('vib\tmylib\t1.0.0');
+    console.log('python\tnumpy\t1.26.0');
+    if (options.detailed) {
+      console.log('\nDetails:');
+      console.log('vib:mylib - A sample Vib library');
+      console.log('python:numpy - Numerical computing library');
+    }
+  });
 
-proc cClean(all: bool = false, verbose: bool = false) =
-  var args = @["clean"]
-  if all:
-    args.add("--all")
-  if runExternal(compBin, args, verbose) == 0:
-    styledEcho(fgGreen, "Clean completed successfully.")
-  else:
-    styledEcho(fgRed, "Clean failed.")
+const cCmd = program.command('c');
 
-proc cTest(verbose: bool = false, file: string) =
-  styledEcho(fgYellow, fmt"Running tests on {file} (placeholder)")
-  # Simulate test run
-  if verbose:
-    echo "Test output: All tests passed."
+cCmd.command('build')
+  .option('--target <target>')
+  .option('--output <output>')
+  .option('--optimize')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    if (checkCode(file, true, options.verbose) !== 0) process.exit(1);
+    let args = ['build', file];
+    if (options.target) {
+      args.push('--target', options.target);
+    }
+    if (options.output) {
+      args.push('--output', options.output);
+    }
+    if (options.optimize) args.push('--optimize');
+    if (runExternal(compBin, args, options.verbose) === 0) {
+      console.log(chalk.green('Build completed successfully.'));
+    } else {
+      console.log(chalk.red('Build failed.'));
+    }
+  });
 
-proc vBuild(release: bool = false, output = "", verbose: bool = false, file: string) =
-  if checkCode(file, true, verbose) != 0:
-    quit(1)
-  var args = @["build", file]
-  if release:
-    args.add("--release")
-  if output != "":
-    args.add("--output")
-    args.add(output)
-  if runExternal(vmBin, args, verbose) == 0:
-    styledEcho(fgGreen, "VM build completed successfully.")
-  else:
-    styledEcho(fgRed, "VM build failed.")
+cCmd.command('clean')
+  .option('--all')
+  .option('--verbose')
+  .action((options) => {
+    let args = ['clean'];
+    if (options.all) args.push('--all');
+    if (runExternal(compBin, args, options.verbose) === 0) {
+      console.log(chalk.green('Clean completed successfully.'));
+    } else {
+      console.log(chalk.red('Clean failed.'));
+    }
+  });
 
-proc vCompile(target = "", verbose: bool = false, file: string) =
-  if checkCode(file, false, verbose) != 0:
-    quit(1)
-  var args = @["compile", file]
-  if target != "":
-    args.add("--target")
-    args.add(target)
-  if runExternal(vmBin, args, verbose) == 0:
-    styledEcho(fgGreen, "VM compile completed successfully.")
-  else:
-    styledEcho(fgRed, "VM compile failed.")
+cCmd.command('test')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    console.log(chalk.yellow(`Running tests on ${file} (placeholder)`));
+    if (options.verbose) {
+      console.log('Test output: All tests passed.');
+    }
+  });
 
-proc vClean(verbose: bool = false) =
-  var args = @["clean"]
-  if runExternal(vmBin, args, verbose) == 0:
-    styledEcho(fgGreen, "VM clean completed successfully.")
-  else:
-    styledEcho(fgRed, "VM clean failed.")
+const vCmd = program.command('v');
 
-proc vRun(verbose: bool = false, file: string) =
-  var args = @["run", file]
-  if verbose:
-    args.add("--verbose")
-  if runExternal(vmBin, args, verbose) == 0:
-    styledEcho(fgGreen, "VM run completed successfully.")
-  else:
-    styledEcho(fgRed, "VM run failed.")
+vCmd.command('build')
+  .option('--release')
+  .option('--output <output>')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    if (checkCode(file, true, options.verbose) !== 0) process.exit(1);
+    let args = ['build', file];
+    if (options.release) args.push('--release');
+    if (options.output) {
+      args.push('--output', options.output);
+    }
+    if (runExternal(vmBin, args, options.verbose) === 0) {
+      console.log(chalk.green('VM build completed successfully.'));
+    } else {
+      console.log(chalk.red('VM build failed.'));
+    }
+  });
 
-proc tCompile(target = "", output = "", verbose: bool = false, lang: string, file: string) =
-  if checkCode(file, true, verbose) != 0:
-    quit(1)
-  var args = @[file]
-  if target != "":
-    args.add("--target")
-    args.add(target)
-  if output != "":
-    args.add("--output")
-    args.add(output)
-  if lang.toLowerAscii == "c":
-    if runExternal(transBin, @[lang] & args, verbose) == 0:
-      styledEcho(fgGreen, "Translation and compile completed successfully.")
-    else:
-      styledEcho(fgRed, "Translation and compile failed.")
-  else:
-    let dir = parentDir(absolutePath(file))
-    let fname = extractFilename(file)
-    var dockerArgs = @["run", "--rm", "-v", fmt"{dir}:/app", "-w", "/app", fmt"vib-translator-{lang}", "translate", fname]
-    for i in countup(1, args.len-1, 2):
-      dockerArgs.add(args[i])
-      dockerArgs.add(args[i+1])
-    if runExternal("docker", dockerArgs, verbose) == 0:
-      styledEcho(fgGreen, "Docker translation and compile completed successfully.")
-    else:
-      styledEcho(fgRed, "Docker translation and compile failed.")
+vCmd.command('compile')
+  .option('--target <target>')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    if (checkCode(file, false, options.verbose) !== 0) process.exit(1);
+    let args = ['compile', file];
+    if (options.target) {
+      args.push('--target', options.target);
+    }
+    if (runExternal(vmBin, args, options.verbose) === 0) {
+      console.log(chalk.green('VM compile completed successfully.'));
+    } else {
+      console.log(chalk.red('VM compile failed.'));
+    }
+  });
 
-proc tList() =
-  let supported = @["c", "go", "java", "python", "rust", "zig"].sorted
-  styledEcho(fgGreen, "Supported translation languages:")
-  for l in supported:
-    echo "- " & l
+vCmd.command('clean')
+  .option('--verbose')
+  .action((options) => {
+    let args = ['clean'];
+    if (runExternal(vmBin, args, options.verbose) === 0) {
+      console.log(chalk.green('VM clean completed successfully.'));
+    } else {
+      console.log(chalk.red('VM clean failed.'));
+    }
+  });
 
-proc run(debug: bool = false, verbose: bool = false, file: string) =
-  if checkCode(file, true, verbose) != 0:
-    quit(1)
-  var args = @[file]
-  if debug:
-    args.add("--debug")
-  if verbose:
-    args.add("--verbose")
-  if runExternal(vmBin, args, verbose) == 0:
-    styledEcho(fgGreen, "Run completed successfully.")
-  else:
-    styledEcho(fgRed, "Run failed.")
+vCmd.command('run')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    let args = ['run', file];
+    if (options.verbose) args.push('--verbose');
+    if (runExternal(vmBin, args, options.verbose) === 0) {
+      console.log(chalk.green('VM run completed successfully.'));
+    } else {
+      console.log(chalk.red('VM run failed.'));
+    }
+  });
 
-proc initProject(license = "MIT", repo = "", verbose: bool = false, projectName = "my-vib-project") =
-  if dirExists(projectName):
-    styledEcho(fgRed, fmt"Directory {projectName} already exists.")
-    quit(1)
-  createDir(projectName)
-  let cmdDir = projectName / "cmd"
-  createDir(cmdDir)
-  let mainFile = cmdDir / "main.vib"
-  let exampleCode = """function main() [
-	write("Hello from Vib!")
-]"""
-  writeFile(mainFile, exampleCode)
-  let vmlFile = projectName / "Project.vml"
-  let vmlContent = fmt"""name = "{projectName}"
-license = "{license}"
-repository = "{repo}"
-version = "0.1.0"
+const tCmd = program.command('t');
 
-[dependencies]
+tCmd.command('compile')
+  .option('--target <target>')
+  .option('--output <output>')
+  .option('--verbose')
+  .argument('<lang>')
+  .argument('<file>')
+  .action((lang, file, options) => {
+    if (checkCode(file, true, options.verbose) !== 0) process.exit(1);
+    let args = [file];
+    if (options.target) {
+      args.push('--target', options.target);
+    }
+    if (options.output) {
+      args.push('--output', options.output);
+    }
+    if (lang.toLowerCase() === 'c') {
+      if (runExternal(transBin, [lang, ...args], options.verbose) === 0) {
+        console.log(chalk.green('Translation and compile completed successfully.'));
+      } else {
+        console.log(chalk.red('Translation and compile failed.'));
+      }
+    } else {
+      const dir = path.dirname(path.resolve(file));
+      const fname = path.basename(file);
+      let dockerArgs = ['run', '--rm', '-v', `${dir}:/app`, '-w', '/app', `vib-translator-${lang}`, 'translate', fname, ...args];
+      if (runExternal('docker', dockerArgs, options.verbose) === 0) {
+        console.log(chalk.green('Docker translation and compile completed successfully.'));
+      } else {
+        console.log(chalk.red('Docker translation and compile failed.'));
+      }
+    }
+  });
 
-build_targets = ["exe", "bin", "deb", "rpm"]
-source_dir = "cmd/main.vib"
-"""
-  writeFile(vmlFile, vmlContent)
-  if verbose:
-    styledEcho(fgYellow, "Project files created:")
-    echo mainFile
-    echo vmlFile
-  styledEcho(fgGreen, fmt"Initialized project {projectName} with license {license} and repo {repo}.")
+tCmd.command('list')
+  .action(() => {
+    let supported = ['c', 'go', 'java', 'python', 'rust', 'zig'].sort();
+    console.log(chalk.green('Supported translation languages:'));
+    for (let l of supported) {
+      console.log('- ' + l);
+    }
+  });
 
-proc tutorials(topic = "") =
-  if topic == "":
-    echo "Available topics: syntax, functions, embedded, libraries, comments"
-    return
-  case topic.toLowerAscii
-  of "syntax":
-    echo "Vib syntax draws clarity from Rust, most syntax from Python: [] instead of {}, write instead of print."
-  of "functions":
-    echo "Functions are defined like in JavaScript: function name(params) [ body ]"
-  of "embedded":
-    echo "Embed code from other languages: #=lang= [ code ]"
-  of "libraries":
-    echo "Require libraries: require \"module\"; for foreign: require \"lang:module\". Specify in <> like <python:numpy>."
-  of "comments":
-    echo "Single line: ~ comment\nMulti line: :: comment ::"
-  else:
-    styledEcho(fgRed, fmt"Unknown topic: {topic}")
-    echo "Try: syntax, functions, embedded, libraries, comments"
+program.command('run')
+  .option('--debug')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    if (checkCode(file, true, options.verbose) !== 0) process.exit(1);
+    let args = [file];
+    if (options.debug) args.push('--debug');
+    if (options.verbose) args.push('--verbose');
+    if (runExternal(vmBin, args, options.verbose) === 0) {
+      console.log(chalk.green('Run completed successfully.'));
+    } else {
+      console.log(chalk.red('Run failed.'));
+    }
+  });
 
-proc doc(verbose: bool = false, file: string) =
-  styledEcho(fgYellow, fmt"Generating documentation for {file} (placeholder)")
-  if verbose:
-    echo "Doc output: Documentation generated."
+program.command('init')
+  .option('--license <license>', 'MIT')
+  .option('--repo <repo>', '')
+  .option('--verbose')
+  .argument('[projectName]', 'my-vib-project')
+  .action((projectName, options) => {
+    if (fs.existsSync(projectName)) {
+      console.log(chalk.red(`Directory ${projectName} already exists.`));
+      process.exit(1);
+    }
+    fs.mkdirSync(projectName);
+    const cmdDir = path.join(projectName, 'cmd');
+    fs.mkdirSync(cmdDir);
+    const mainFile = path.join(cmdDir, 'main.vib');
+    const exampleCode = `function main() [\n\twrite("Hello from Vib!")\n]`;
+    fs.writeFileSync(mainFile, exampleCode);
+    const vmlFile = path.join(projectName, 'Project.vml');
+    const vmlContent = `name = "${projectName}"\nlicense = "${options.license}"\nrepository = "${options.repo}"\nversion = "0.1.0"\n\n[dependencies]\n\nbuild_targets = ["exe", "bin", "deb", "rpm"]\nsource_dir = "cmd/main.vib"\n`;
+    fs.writeFileSync(vmlFile, vmlContent);
+    if (options.verbose) {
+      console.log(chalk.yellow('Project files created:'));
+      console.log(mainFile);
+      console.log(vmlFile);
+    }
+    console.log(chalk.green(`Initialized project ${projectName} with license ${options.license} and repo ${options.repo}.`));
+  });
 
-proc showAuthor() =
-  styledEcho(fgBlue, "Author of Vib: " & vibAuthor)
+program.command('tutorials')
+  .argument('[topic]', '')
+  .action((topic) => {
+    if (topic === '') {
+      console.log('Available topics: syntax, functions, embedded, libraries, comments');
+      return;
+    }
+    switch (topic.toLowerCase()) {
+      case 'syntax':
+        console.log('Vib syntax draws clarity from Rust, most syntax from Python: [] instead of {}, write instead of print.');
+        break;
+      case 'functions':
+        console.log('Functions are defined like in JavaScript: function name(params) [ body ]');
+        break;
+      case 'embedded':
+        console.log('Embed code from other languages: #=lang= [ code ]');
+        break;
+      case 'libraries':
+        console.log('Require libraries: require "module"; for foreign: require "lang:module". Specify in <> like <python:numpy>.');
+        break;
+      case 'comments':
+        console.log('Single line: ~ comment\\nMulti line: :: comment ::');
+        break;
+      default:
+        console.log(chalk.red(`Unknown topic: ${topic}`));
+        console.log('Try: syntax, functions, embedded, libraries, comments');
+    }
+  });
 
-proc showVersion() =
-  styledEcho(fgBlue, "Vib version: " & vibVersion)
+program.command('doc')
+  .option('--verbose')
+  .argument('<file>')
+  .action((file, options) => {
+    console.log(chalk.yellow(`Generating documentation for ${file} (placeholder)`));
+    if (options.verbose) {
+      console.log('Doc output: Documentation generated.');
+    }
+  });
 
-dispatchMulti(
-  [install, help = {"verbose": "Enable verbose output", "packages": "Packages to install (e.g., python:numpy)"}],
-  [remove, help = {"force": "Force removal", "packages": "Packages to remove"}],
-  [update, help = {"all": "Update all packages", "packages": "Specific packages to update"}],
-  [listPackages, cmdName = "list", help = {"detailed": "Show detailed info"}],
-  [cBuild, cmdName = "c build", help = {"target": "Cross-compile target (e.g., windows-amd64)", "output": "Output binary name", "optimize": "Enable optimizations", "verbose": "Verbose output", "file": ".vib file to build"}],
-  [cClean, cmdName = "c clean", help = {"all": "Clean all artifacts", "verbose": "Verbose output"}],
-  [cTest, cmdName = "c test", help = {"verbose": "Verbose test output", "file": "File to test"}],
-  [vBuild, cmdName = "v build", help = {"release": "Build release .vib-vm", "output": "Output file", "verbose": "Verbose output", "file": ".vib file"}],
-  [vCompile, cmdName = "v compile", help = {"target": "Cross-compile target", "verbose": "Verbose output", "file": ".vib-vm file"}],
-  [vClean, cmdName = "v clean", help = {"verbose": "Verbose output"}],
-  [vRun, cmdName = "v run", help = {"verbose": "Verbose output", "file": ".object file"}],
-  [tCompile, cmdName = "t compile", help = {"target": "Cross-compile target", "output": "Output file", "verbose": "Verbose output", "lang": "Target language", "file": ".vib file"}],
-  [tList, cmdName = "t list"],
-  [run, help = {"debug": "Run in debug mode", "verbose": "Verbose output", "file": ".vib file to run"}],
-  [initProject, cmdName = "init", help = {"license": "Project license (default MIT)", "repo": "GitHub repo URL", "verbose": "Verbose output", "projectName": "Name of the project (default my-vib-project)"}],
-  [tutorials, help = {"topic": "Specific tutorial topic (leave empty for list)"}],
-  [doc, cmdName = "doc", help = {"verbose": "Verbose output", "file": ".vib file for doc generation"}],
-  [showAuthor, cmdName = "autor"],
-  [showVersion, cmdName = "version"]
-)
+program.command('autor')
+  .action(() => {
+    console.log(chalk.blue(`Author of Vib: ${vibAuthor}`));
+  });
+
+program.command('version')
+  .action(() => {
+    console.log(chalk.blue(`Vib version: ${vibVersion}`));
+  });
+
+program.parse(process.argv);
