@@ -1,1 +1,18 @@
-
+{
+  "name": "vib",
+  "version": "0.1.0",
+  "description": "Vib CLI tool in JavaScript",
+  "main": "main.js",
+  "bin": {
+    "vib": "main.js"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0"
+  },
+  "scripts": {
+    "start": "node main.js"
+  },
+  "author": "michal92299",
+  "license": "MIT"
+}
